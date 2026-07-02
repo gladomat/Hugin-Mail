@@ -37,7 +37,8 @@ def _dominant_hint(hints: pl.Series) -> str | None:
     return max(set(non_null), key=non_null.count)
 
 
-def top_senders(store: Store, top: int = 100) -> list[SenderProfile]:
+def _aggregate(store: Store) -> list[SenderProfile]:
+    """All senders, aggregated and sorted by descending message count."""
     df = _messages_frame(store)
     if df.height == 0:
         return []
@@ -52,22 +53,31 @@ def top_senders(store: Store, top: int = 100) -> list[SenderProfile]:
             pl.col("subject").head(3).alias("example_subjects"),
         )
         .sort("message_count", descending=True)
-        .head(top)
     )
-    out: list[SenderProfile] = []
-    for row in grouped.iter_rows(named=True):
-        out.append(
-            SenderProfile(
-                from_addr=row["from_addr"],
-                from_domain=row["from_domain"] or "",
-                message_count=row["message_count"],
-                first_seen=None,
-                last_seen=None,
-                keyword_hint=_dominant_hint(pl.Series(row["keyword_hint"])),
-                example_subjects=tuple(s for s in row["example_subjects"] if s),
-            )
+    return [
+        SenderProfile(
+            from_addr=row["from_addr"],
+            from_domain=row["from_domain"] or "",
+            message_count=row["message_count"],
+            first_seen=None,
+            last_seen=None,
+            keyword_hint=_dominant_hint(pl.Series(row["keyword_hint"])),
+            example_subjects=tuple(s for s in row["example_subjects"] if s),
         )
-    return out
+        for row in grouped.iter_rows(named=True)
+    ]
+
+
+def top_senders(store: Store, top: int = 100) -> list[SenderProfile]:
+    return _aggregate(store)[:top]
+
+
+def senders_matching(store: Store, substr: str) -> list[SenderProfile]:
+    """Senders whose address or domain contains `substr` (case-insensitive),
+    at any rank — used by `confirm --sender` to reach the long tail."""
+    s = substr.lower()
+    return [p for p in _aggregate(store)
+            if s in p.from_addr.lower() or s in p.from_domain.lower()]
 
 
 def render_markdown(profiles: list[SenderProfile], taxonomy_version: str, top: int) -> str:
