@@ -1,2 +1,11 @@
 CLAUDE.md
 docs/prd/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.sqlite
+.serena/

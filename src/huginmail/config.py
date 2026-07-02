@@ -1,0 +1,78 @@
+"""Runtime config. Credentials come from keychain/env only, never config files."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
+
+DEFAULT_DATA_DIR = Path.home() / ".local" / "share" / "hugin-mail"
+KEYRING_SERVICE = "hugin-mail"
+
+
+class ImapConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    host: str = ""
+    port: int = 993
+    username: str = ""
+    folders: tuple[str, ...] = ("INBOX",)
+
+
+class LlmConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    base_url: str = "http://127.0.0.1:8000/v1"
+    model_id: str = "mlx-community/Qwen3-4B-Instruct"
+    working_budget_tokens: int = 4096
+
+
+class Config(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    data_dir: Path = Field(default=DEFAULT_DATA_DIR)
+    taxonomy_version: str = "v1"
+    imap: ImapConfig = ImapConfig()
+    llm: LlmConfig = LlmConfig()
+    store_full_bodies: bool = False
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "hugin.sqlite"
+
+    @property
+    def reports_dir(self) -> Path:
+        return self.data_dir / "reports"
+
+    @property
+    def exports_dir(self) -> Path:
+        return self.data_dir / "exports"
+
+    def ensure_dirs(self) -> None:
+        for d in (self.data_dir, self.reports_dir, self.exports_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+
+def load_config(data_dir: Path | None = None) -> Config:
+    """Build config. `HUGIN_DATA_DIR` env overrides the default data dir."""
+    resolved = data_dir or _env_data_dir() or DEFAULT_DATA_DIR
+    return Config(data_dir=resolved)
+
+
+def _env_data_dir() -> Path | None:
+    raw = os.environ.get("HUGIN_DATA_DIR")
+    return Path(raw).expanduser() if raw else None
+
+
+def get_imap_password(username: str) -> str | None:
+    """Resolve IMAP password: env `HUGIN_IMAP_PASSWORD` first, then OS keychain."""
+    env = os.environ.get("HUGIN_IMAP_PASSWORD")
+    if env:
+        return env
+    try:
+        import keyring
+
+        return keyring.get_password(KEYRING_SERVICE, username)
+    except Exception:
+        return None

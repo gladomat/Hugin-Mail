@@ -1,0 +1,31 @@
+version: v1
+changelog: |
+  v1 - seed taxonomy (PRD v0.2 §7).
+tags:
+  - name: keep
+    definition: Correspondence, personal, work-relevant.
+  - name: receipt
+    definition: Purchase confirmations, invoices, bank/brokerage statements.
+    subtags: [receipt/bank, receipt/purchase, receipt/subscription]
+  - name: notification
+    definition: Transactional/automated but non-financial (shipping, CI, calendar).
+  - name: newsletter
+    definition: Subscribed periodic content.
+  - name: junk
+    definition: Marketing, cold outreach, expired promotions.
+    subtags: [junk/marketing]
+  - name: unclassified
+    definition: Explicit residual bucket; must trend to zero by end of Pass 4.
+keyword_rules:
+  - tag: junk
+    fields: [subject, snippet]
+    keywords: [unsubscribe, "% off", sale, "limited offer", "act now"]
+  - tag: receipt
+    fields: [subject]
+    keywords: [invoice, receipt, statement, order confirmation, payment]
+  - tag: notification
+    fields: [subject]
+    keywords: [shipped, delivered, "build passed", "build failed", reminder]
+  - tag: newsletter
+    fields: [subject, snippet]
+    keywords: [newsletter, digest, weekly, "this week"]
