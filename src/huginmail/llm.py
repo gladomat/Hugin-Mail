@@ -115,8 +115,10 @@ class OpenAiClient:
     def __init__(self, cfg: LlmConfig) -> None:
         from openai import OpenAI
 
+        from .config import get_llm_api_key
+
         self.cfg = cfg
-        self._client = OpenAI(base_url=cfg.base_url, api_key="not-needed")
+        self._client = OpenAI(base_url=cfg.base_url, api_key=get_llm_api_key())
 
     def complete(self, system: str, user: str, sampling: dict) -> str:
         resp = self._client.chat.completions.create(

@@ -91,6 +91,14 @@ def _env_data_dir() -> Path | None:
     return Path(raw).expanduser() if raw else None
 
 
+def get_llm_api_key() -> str:
+    """Resolve the local LLM endpoint's API key. `HUGIN_LLM_API_KEY` first, then
+    `OPENAI_API_KEY`, else a placeholder for servers that ignore auth."""
+    return (os.environ.get("HUGIN_LLM_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or "not-needed")
+
+
 def get_imap_password(username: str) -> str | None:
     """Resolve IMAP password: env `HUGIN_IMAP_PASSWORD` first, then OS keychain."""
     env = os.environ.get("HUGIN_IMAP_PASSWORD")
