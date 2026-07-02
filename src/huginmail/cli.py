@@ -34,6 +34,9 @@ _CONFIG_TEMPLATE = """\
 # via the HUGIN_IMAP_PASSWORD env var or the OS keychain (service "hugin-mail").
 taxonomy_version = "v1"
 store_full_bodies = false
+# false (default): keyword rules are advisory, the LLM decides. true: keyword
+# rules classify deterministically (fast path, but crude — can misfile).
+keyword_rules_authoritative = false
 
 [imap]
 host = "imap.example.com"
@@ -45,6 +48,7 @@ folders = ["INBOX"]
 base_url = "http://127.0.0.1:8000/v1"   # oMLX default; Ollama: http://127.0.0.1:11434/v1
 model_id = "mlx-community/Qwen3-4B-Instruct"
 working_budget_tokens = 4096
+confidence_threshold = 0.7              # LLM calls below this land in `unclassified`
 """
 
 
@@ -90,8 +94,10 @@ def status() -> None:
             typer.echo(f"  {folder}: {state} (uidvalidity={cur['uidvalidity']}, "
                        f"last_uid={cur['last_uid']})")
     typer.echo("")
-    typer.echo("Gates:")
-    typer.echo("  unsupervised_classify: LOCKED (Pass 3 spot-check not run)")
+    mode = ("authoritative" if cfg.keyword_rules_authoritative else "advisory (LLM decides)")
+    typer.echo("Modes:")
+    typer.echo(f"  keyword_rules: {mode}")
+    typer.echo(f"  llm abstain below confidence: {cfg.llm.confidence_threshold}")
     store.close()
 
 
@@ -169,28 +175,39 @@ def confirm(
 @app.command()
 def classify(
     batch: int = typer.Option(
-        None, help="Also LLM-classify up to N rule-uncovered messages (Pass 3)"),
+        None, help="LLM-classify up to N rule-uncovered messages"),
+    all_: bool = typer.Option(
+        False, "--all", help="LLM-classify every rule-uncovered message (whole inbox)"),
 ) -> None:
-    """Apply confirmed rules (sender + keyword) over the index. With --batch,
-    the local LLM then classifies up to N rule-uncovered messages (K=1)."""
+    """Classify the inbox. Confirmed sender rules always win; by default keyword
+    rules are advisory and the LLM decides the rest (config:
+    keyword_rules_authoritative). Use --all to let the LLM do the whole inbox in
+    one pass, or --batch N for a bounded run. With neither, only rules are applied."""
     cfg = load_config()
     store = _open(cfg)
     tax = load_taxonomy(cfg.taxonomy_version)
+    kw = cfg.keyword_rules_authoritative
 
     from .classify import classify_llm_batch, classify_rules
     from .export import export_manifest
     from .summary import write_summary
 
-    res = classify_rules(store, tax)
+    res = classify_rules(store, tax, keyword_authoritative=kw)
     typer.echo(f"Rules: scanned={res.scanned} written={res.written} "
                f"unchanged={res.unchanged} uncovered={res.uncovered}")
-    if batch is not None:
+
+    if all_ or batch is not None:
         from .llm import OpenAiClient
 
+        limit = None if all_ else batch
+        scope = "whole inbox" if all_ else f"up to {batch}"
+        typer.echo(f"LLM classifying {scope} "
+                   f"(model={cfg.llm.model_id}, abstain<{cfg.llm.confidence_threshold})…")
         client = OpenAiClient(cfg.llm)
-        bres = classify_llm_batch(store, tax, client, cfg.llm, limit=batch)
-        typer.echo(f"LLM batch: called={bres.called} "
-                   f"unclassified={bres.unclassified}")
+        bres = classify_llm_batch(
+            store, tax, client, cfg.llm, limit=limit, keyword_authoritative=kw,
+            confidence_threshold=cfg.llm.confidence_threshold)
+        typer.echo(f"LLM: called={bres.called} unclassified={bres.unclassified}")
 
     export_manifest(store, tax, cfg.exports_dir)
     summ = write_summary(store, tax, cfg.data_dir)

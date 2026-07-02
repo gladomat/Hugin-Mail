@@ -37,20 +37,28 @@ export HUGIN_IMAP_PASSWORD='…'        # simplest; or store in the OS keychain:
 Run oMLX (or Ollama) so the endpoint in `config.toml` is live. Only needed for
 the LLM classification steps (5c+), not for sync/rules.
 
-### 5. Run the pipeline (each command is idempotent + resumable)
+### 5. Run the pipeline (LLM-first; each command idempotent + resumable)
 ```bash
 hugin sync                     # Pass 0: read-only index (EXAMINE + BODY.PEEK)
-hugin report senders --top 100 # Pass 1: top-sender report (Markdown)
-hugin confirm --top 100        # Pass 2: TUI review → sender/domain rules
-hugin classify                 # apply rules (sender + keyword) → records + SUMMARY.md
-hugin classify --batch 100     # LLM-classify up to N rule-uncovered messages
-hugin status                   # coverage + gate states, any time
+hugin classify --all           # LLM classifies the whole inbox; uncertain → unclassified
+hugin report summary           # SUMMARY.md — incl. lowest-confidence calls to review
+# then correct only what's wrong, from the results:
+hugin confirm --sender <name>  # override/defer specific senders (sender rules win)
+hugin classify                 # re-apply; your corrections override the LLM
+hugin status                   # coverage + modes, any time
 ```
 
-In the **`confirm` TUI**: `a` accept the hinted tag · `o` override (type a
-taxonomy leaf like `receipt/bank`) · `d` defer with a note · `q` quit. Quitting
-loses nothing — re-running resumes where you left off. A confirmed **domain**
-rule covers every address on that domain, including the long tail.
+**LLM-first by default.** Confirmed sender rules always win; keyword rules are
+*advisory* (they hint the model, they don't decide). You don't hand-review before
+classifying — `classify --all` does the whole inbox, then you fix mistakes from
+the output. Calls below the confidence threshold (default 0.7) land in
+`unclassified` instead of guessing. Prefer the fast deterministic path? Set
+`keyword_rules_authoritative = true` in config.
+
+In the **`confirm` TUI**: `a` accept the hinted tag · `o` override (taxonomy leaf
+like `receipt/bank`) · `d` defer with a note · `/` search · click a header to
+sort · `q` quit. Per-decision writes — quitting loses nothing, re-running resumes.
+A confirmed **domain** rule covers every address on that domain, tail included.
 
 ### Where things land
 - `<data_dir>/reports/` — sender report.
@@ -64,19 +72,14 @@ rule covers every address on that domain, including the long tail.
 
 ## Current status
 
-Built and merged/PR'd (issues #1–#8): sync, taxonomy, sender report, confirm
-TUI, rules-classify, LLM client, `classify --batch`.
+Built: sync, taxonomy, sender report, confirm TUI (search/sort), LLM-first
+classification (`classify --all`, advisory keyword rules, confidence abstention),
+manifest + SUMMARY with a needs-review section.
 
-**Not yet built** (need decisions or later work):
-- **#9 supervised gate** — needs your calls: spot-check agreement threshold
-  (PRD default 95%), sample size, and whether a multilingual (DE/EN/RO) check
-  gates Pass 4. This is the next step and is blocked on you.
-- #10 unsupervised `classify --all`, #11 audit, #12 `export rules --format sieve`,
-  #13 TOON batching (benchmark-gated), #14 comprehensive README.
-
-The classification of rule-uncovered mail is only as good as your `confirm` pass
-plus the local model; everything is provenance-stamped (method, taxonomy
-version, model, prompt) so any decision is traceable.
+**Not yet built:** #9 supervised gate (now opt-in, not required), #11 keyword
+audit, #12 `export rules --format sieve`, #13 TOON batching, #17 progress/verbose
+output. Everything is provenance-stamped (method, taxonomy version, model,
+prompt) so any decision is traceable.
 
 ---
 

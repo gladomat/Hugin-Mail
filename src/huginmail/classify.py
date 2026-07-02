@@ -23,8 +23,9 @@ class ClassifyResult:
     uncovered: int = 0  # left for the LLM pass
 
 
-def classify_rules(store: Store, tax: TagTaxonomy) -> ClassifyResult:
-    resolver = Resolver(store.get_rules(), tax)
+def classify_rules(store: Store, tax: TagTaxonomy,
+                   keyword_authoritative: bool = True) -> ClassifyResult:
+    resolver = Resolver(store.get_rules(), tax, keyword_authoritative)
     for r in resolver.invalid:
         store.mark_rule_stale(r.scope, r.key)
 
@@ -62,11 +63,16 @@ class BatchResult:
 
 def classify_llm_batch(
     store: Store, tax: TagTaxonomy, client: LlmClient, cfg: LlmConfig,
-    limit: int | None = None,
+    limit: int | None = None, keyword_authoritative: bool = True,
+    confidence_threshold: float = 0.0,
 ) -> BatchResult:
     """Classify rule-uncovered messages via the LLM (K=1 one-shot per message),
-    writing method='llm' records with confidence, rationale, and provenance."""
-    resolver = Resolver(store.get_rules(), tax)
+    writing method='llm' records with confidence, rationale, and provenance.
+
+    A message whose LLM confidence is below `confidence_threshold` is recorded as
+    `unclassified` (abstention over a guess, §8) — its rationale/confidence are
+    kept so it can be reviewed."""
+    resolver = Resolver(store.get_rules(), tax, keyword_authoritative)
     res = BatchResult()
     now = datetime.now()
     for msg in store.iter_messages():
@@ -78,11 +84,14 @@ def classify_llm_batch(
             continue  # already has a classification for this taxonomy
         out = classify_message(client, tax, msg, cfg)
         res.called += 1
-        if out.tag == "unclassified":
+        tag, subtag = out.tag, out.subtag
+        if tag != "unclassified" and out.confidence < confidence_threshold:
+            tag, subtag = "unclassified", None  # abstain: too uncertain
+        if tag == "unclassified":
             res.unclassified += 1
         store.add_classification(ClassificationRecord(
-            uid=msg.uid, folder=msg.folder, tag=out.tag,
-            subtags=(out.subtag,) if out.subtag else (),
+            uid=msg.uid, folder=msg.folder, tag=tag,
+            subtags=(subtag,) if subtag else (),
             confidence=out.confidence, method="llm",
             taxonomy_version=tax.version, taxonomy_hash=tax.content_hash,
             model_id=out.model_id, prompt_version=out.prompt_version,
