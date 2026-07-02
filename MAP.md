@@ -8,7 +8,7 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | Module | Responsibility |
 |--------|----------------|
 | `__init__.py` | Package + version |
-| `config.py` | Runtime config, data dir, credential resolution (keychain/env only) |
+| `config.py` | Runtime config (TOML file + env), data dir, credential resolution (keychain/env only) |
 | `models.py` | Pydantic v2 models; SQLite schema mirrors these 1:1 |
 | `store.py` | SQLite store: messages, cursors, rules, classifications, findings |
 | `tokens.py` | Offline token estimator (taxonomy budget check only) |
@@ -26,7 +26,7 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | `prompts/*.txt` | Versioned prompt templates (`prompt_version`) |
 | `export.py` | Manifest → Parquet + CSV twin |
 | `summary.py` | `SUMMARY.md` standing overview |
-| `cli.py` | Typer CLI: `status`, `sync`, `confirm`, `classify`, `report`, `export`, `taxonomy` |
+| `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `report`, `export`, `taxonomy` |
 
 ## tests/
 Mirror per module. `conftest.py` provides `store`, `tax`, `FakeImapSource`.

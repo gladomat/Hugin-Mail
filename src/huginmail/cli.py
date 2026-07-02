@@ -29,6 +29,41 @@ def version() -> None:
     typer.echo(f"hugin {__version__}")
 
 
+_CONFIG_TEMPLATE = """\
+# hugin-mail config. Credentials are NEVER stored here — set the IMAP password
+# via the HUGIN_IMAP_PASSWORD env var or the OS keychain (service "hugin-mail").
+taxonomy_version = "v1"
+store_full_bodies = false
+
+[imap]
+host = "imap.example.com"
+port = 993
+username = "you@example.com"
+folders = ["INBOX"]
+
+[llm]
+base_url = "http://127.0.0.1:8000/v1"   # oMLX default; Ollama: http://127.0.0.1:11434/v1
+model_id = "mlx-community/Qwen3-4B-Instruct"
+working_budget_tokens = 4096
+"""
+
+
+@app.command("init-config")
+def init_config() -> None:
+    """Write a starter config.toml into the data dir (does not overwrite)."""
+    cfg = load_config()
+    cfg.ensure_dirs()
+    path = cfg.data_dir / "config.toml"
+    if path.exists():
+        typer.secho(f"{path} already exists — leaving it untouched.",
+                    fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+    path.write_text(_CONFIG_TEMPLATE)
+    typer.echo(f"Wrote {path}")
+    typer.echo("Edit imap.host/username + llm settings, then set "
+               "HUGIN_IMAP_PASSWORD (or store it in the keychain).")
+
+
 @app.command()
 def status() -> None:
     """Show sync + classification coverage and gate states."""
