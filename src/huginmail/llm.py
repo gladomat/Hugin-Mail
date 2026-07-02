@@ -16,6 +16,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import LlmConfig
+from .hints import keyword_hint
 from .models import EmailMessage, TagTaxonomy
 from .rules import valid_leaves
 from .taxonomy import render_prompt
@@ -75,6 +76,9 @@ def classify_message(
 ) -> LlmOutcome:
     system = load_prompt().format(taxonomy=render_prompt(tax))
     payload, truncated = build_payload(msg)
+    hint = keyword_hint(msg, tax)
+    if hint:
+        payload += f"\nKeyword hint (advisory, may be wrong): {hint}"
     leaves = valid_leaves(tax)
 
     parsed = _try_classify(client, system, payload)

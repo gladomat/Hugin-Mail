@@ -26,6 +26,8 @@ class LlmConfig(BaseModel):
     base_url: str = "http://127.0.0.1:8000/v1"
     model_id: str = "mlx-community/Qwen3-4B-Instruct"
     working_budget_tokens: int = 4096
+    # LLM confidence below this lands in `unclassified` rather than a guess (§8).
+    confidence_threshold: float = 0.7
 
 
 class Config(BaseModel):
@@ -36,6 +38,9 @@ class Config(BaseModel):
     imap: ImapConfig = ImapConfig()
     llm: LlmConfig = LlmConfig()
     store_full_bodies: bool = False
+    # When False (default), keyword rules are advisory hints only and the LLM
+    # decides; when True, they classify deterministically (fast path). See #18.
+    keyword_rules_authoritative: bool = False
 
     @property
     def db_path(self) -> Path:
