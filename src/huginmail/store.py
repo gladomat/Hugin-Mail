@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from .models import ClassificationRecord, EmailMessage
+from .models import ClassificationRecord, Deferral, EmailMessage, SenderRule
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -39,10 +39,22 @@ CREATE TABLE IF NOT EXISTS sync_cursor (
 );
 
 CREATE TABLE IF NOT EXISTS sender_rules (
-    from_addr    TEXT PRIMARY KEY,
+    key          TEXT NOT NULL,
+    scope        TEXT NOT NULL,            -- 'addr' | 'domain'
     tag          TEXT NOT NULL,
+    subtag       TEXT,
+    stale        INTEGER NOT NULL DEFAULT 0,
     confirmed_by TEXT,
-    confirmed_at TEXT
+    confirmed_at TEXT,
+    PRIMARY KEY (scope, key)
+);
+
+CREATE TABLE IF NOT EXISTS deferrals (
+    key        TEXT NOT NULL,
+    scope      TEXT NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (scope, key)
 );
 
 CREATE TABLE IF NOT EXISTS classifications (
@@ -125,6 +137,20 @@ class Store:
             )
         return len(rows)
 
+    def iter_messages(self) -> Iterator[EmailMessage]:
+        cur = self._conn.execute(
+            """SELECT uid, folder, uidvalidity, message_id, from_addr, from_domain,
+                      "to", subject, date, size, snippet, headers_hash FROM messages"""
+        )
+        for r in cur:
+            yield EmailMessage(
+                uid=r["uid"], folder=r["folder"], uidvalidity=r["uidvalidity"],
+                message_id=r["message_id"], from_addr=r["from_addr"],
+                from_domain=r["from_domain"], to=r["to"], subject=r["subject"],
+                date=datetime.fromisoformat(r["date"]) if r["date"] else None,
+                size=r["size"], snippet=r["snippet"], headers_hash=r["headers_hash"],
+            )
+
     def message_count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
 
@@ -175,3 +201,94 @@ class Store:
         return self._conn.execute(
             "SELECT COUNT(DISTINCT folder || ':' || uid) FROM classifications"
         ).fetchone()[0]
+
+    def latest_tag(self, folder: str, uid: int, taxonomy_hash: str) -> str | None:
+        row = self._conn.execute(
+            """SELECT tag FROM classifications
+               WHERE folder=? AND uid=? AND taxonomy_hash=?
+               ORDER BY created_at DESC LIMIT 1""",
+            (folder, uid, taxonomy_hash),
+        ).fetchone()
+        return row[0] if row else None
+
+    def manifest_rows(self, taxonomy_hash: str) -> list[sqlite3.Row]:
+        """Latest classification per message (for this taxonomy), joined to the
+        message. One row per classified (folder, uid)."""
+        return self._conn.execute(
+            """SELECT m.folder, m.uid, m.message_id, m.from_addr, m.from_domain,
+                      m.subject, m.date, c.tag, c.subtags, c.confidence, c.method,
+                      c.taxonomy_version, c.model_id, c.prompt_version, c.rationale,
+                      c.truncated, c.created_at
+               FROM classifications c
+               JOIN (SELECT folder, uid, MAX(created_at) mx FROM classifications
+                     WHERE taxonomy_hash=? GROUP BY folder, uid) t
+                 ON c.folder=t.folder AND c.uid=t.uid AND c.created_at=t.mx
+               JOIN messages m ON m.folder=c.folder AND m.uid=c.uid
+               WHERE c.taxonomy_hash=?""",
+            (taxonomy_hash, taxonomy_hash),
+        ).fetchall()
+
+    # --- sender rules ---------------------------------------------------
+    def upsert_rule(self, rule: SenderRule) -> None:
+        with self._tx() as c:
+            c.execute(
+                """INSERT INTO sender_rules
+                   (key, scope, tag, subtag, stale, confirmed_by, confirmed_at)
+                   VALUES (?,?,?,?,0,?,?)
+                   ON CONFLICT(scope, key) DO UPDATE SET
+                       tag=excluded.tag, subtag=excluded.subtag, stale=0,
+                       confirmed_by=excluded.confirmed_by,
+                       confirmed_at=excluded.confirmed_at""",
+                (
+                    rule.key, rule.scope, rule.tag, rule.subtag,
+                    rule.confirmed_by,
+                    rule.confirmed_at.isoformat() if rule.confirmed_at else None,
+                ),
+            )
+        self.clear_deferral(rule.scope, rule.key)
+
+    def get_rules(self) -> list[SenderRule]:
+        rows = self._conn.execute("SELECT * FROM sender_rules").fetchall()
+        return [
+            SenderRule(
+                key=r["key"], scope=r["scope"], tag=r["tag"], subtag=r["subtag"],
+                confirmed_by=r["confirmed_by"],
+                confirmed_at=datetime.fromisoformat(r["confirmed_at"])
+                if r["confirmed_at"] else None,
+            )
+            for r in rows
+        ]
+
+    def mark_rule_stale(self, scope: str, key: str, stale: bool = True) -> None:
+        with self._tx() as c:
+            c.execute(
+                "UPDATE sender_rules SET stale=? WHERE scope=? AND key=?",
+                (int(stale), scope, key),
+            )
+
+    def delete_rule(self, scope: str, key: str) -> None:
+        with self._tx() as c:
+            c.execute("DELETE FROM sender_rules WHERE scope=? AND key=?", (scope, key))
+
+    # --- deferrals ------------------------------------------------------
+    def upsert_deferral(self, d: Deferral) -> None:
+        with self._tx() as c:
+            c.execute(
+                """INSERT INTO deferrals (key, scope, note, created_at)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(scope, key) DO UPDATE SET note=excluded.note""",
+                (d.key, d.scope, d.note,
+                 (d.created_at or datetime.now()).isoformat()),
+            )
+
+    def get_deferrals(self) -> list[Deferral]:
+        rows = self._conn.execute("SELECT * FROM deferrals").fetchall()
+        return [
+            Deferral(key=r["key"], scope=r["scope"], note=r["note"],
+                     created_at=datetime.fromisoformat(r["created_at"]))
+            for r in rows
+        ]
+
+    def clear_deferral(self, scope: str, key: str) -> None:
+        with self._tx() as c:
+            c.execute("DELETE FROM deferrals WHERE scope=? AND key=?", (scope, key))

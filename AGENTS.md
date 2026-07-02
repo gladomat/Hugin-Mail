@@ -13,6 +13,11 @@ Root contract for the whole repo. Domain: sync, taxonomy, classification, report
   COPY, flags, folders). `sync.py` enforces this via `MUTATING_COMMANDS` +
   `_assert_read_only`; every sync path must run through it.
 - **No cloud LLM.** All inference local (OpenAI-compatible endpoint / Ollama).
+  Sampling profile sent explicitly per request; JSON validated by Pydantic;
+  invalid → retry once → `unclassified`. Abstain below confidence over guessing.
+- **Rules stored version-agnostic** (bare tag leaf); resolver validates each leaf
+  against the current taxonomy and marks invalid rules `stale` rather than
+  emitting a record against an undefined tag.
 - **Credentials** come from `HUGIN_IMAP_PASSWORD` or OS keychain — never config files.
 - **Provenance is first-class.** Every `ClassificationRecord` stamps method,
   taxonomy version + hash, and (for LLM) model/prompt version.
@@ -21,7 +26,8 @@ Root contract for the whole repo. Domain: sync, taxonomy, classification, report
   rendered prompt form is token-budget-checked (`taxonomy.check_budget`).
 
 ## Work Guidance
-- Stack: Python 3.12+, Typer, Pydantic v2 (frozen models), Polars, pytest.
+- Stack: Python 3.12+, Typer, Pydantic v2 (frozen models), Polars, Textual,
+  openai (client only), pytest + pytest-asyncio.
 - Small single-responsibility modules (≤ ~200 lines). Fully type-hinted.
   Comments only for non-obvious *why*. No speculative abstractions.
 - Name files from `MAP.md`; do not roam the repo. One small task per change.
