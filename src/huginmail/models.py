@@ -79,6 +79,42 @@ class AuditFinding(BaseModel):
     resolved: bool = False
 
 
+Scope = Literal["addr", "domain"]
+
+
+class SenderRule(BaseModel):
+    """A human-confirmed classification rule bound to an address or a domain.
+
+    Highest-precedence classification source. `tag`/`subtag` reference a leaf in
+    the current taxonomy but are stored version-agnostically (validated at
+    classify time; migrated by changelog on a major bump)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: str  # lowercased address or domain
+    scope: Scope
+    tag: str
+    subtag: str | None = None
+    confirmed_by: str | None = None
+    confirmed_at: datetime | None = None
+
+    @property
+    def leaf(self) -> str:
+        return f"{self.tag}/{self.subtag}" if self.subtag else self.tag
+
+
+class Deferral(BaseModel):
+    """A sender parked during confirm with a free-text note — a queue signal for
+    a later taxonomy decision, never a classification source."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    scope: Scope
+    note: str = ""
+    created_at: datetime | None = None
+
+
 class KeywordRule(BaseModel):
     """A keyword condition attached to a tag in the taxonomy."""
 

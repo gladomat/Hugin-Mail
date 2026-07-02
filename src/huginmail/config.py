@@ -55,9 +55,30 @@ class Config(BaseModel):
 
 
 def load_config(data_dir: Path | None = None) -> Config:
-    """Build config. `HUGIN_DATA_DIR` env overrides the default data dir."""
+    """Build config from `<data_dir>/config.toml` if present, else defaults.
+
+    Precedence for the data dir: explicit arg → `HUGIN_DATA_DIR` env → default.
+    The TOML file holds `data_dir`, `taxonomy_version`, `store_full_bodies`, and
+    `[imap]` / `[llm]` tables. Credentials are never read from it (keychain/env).
+    """
     resolved = data_dir or _env_data_dir() or DEFAULT_DATA_DIR
-    return Config(data_dir=resolved)
+    raw = _read_toml(resolved / "config.toml")
+    if not raw:
+        return Config(data_dir=resolved)
+
+    raw.pop("data_dir", None)  # data dir is located, not self-referential
+    imap = ImapConfig(**raw.pop("imap", {})) if "imap" in raw else ImapConfig()
+    llm = LlmConfig(**raw.pop("llm", {})) if "llm" in raw else LlmConfig()
+    return Config(data_dir=resolved, imap=imap, llm=llm, **raw)
+
+
+def _read_toml(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    import tomllib
+
+    with path.open("rb") as fh:
+        return tomllib.load(fh)
 
 
 def _env_data_dir() -> Path | None:
