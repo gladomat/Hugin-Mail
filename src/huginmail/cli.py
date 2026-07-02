@@ -134,6 +134,9 @@ def sync(
 @app.command()
 def confirm(
     top: int = typer.Option(100, help="Review the top-N senders"),
+    sender: str = typer.Option(
+        None, help="Restrict the queue to senders matching this substring "
+                   "(any rank; reaches the long tail)"),
     source: str = typer.Option("report", help="report | batch (batch = Pass 3, later)"),
 ) -> None:
     """Pass 2: review senders in a TUI; confirmed decisions become rules."""
@@ -153,7 +156,7 @@ def confirm(
     from .confirm_tui import run_confirm
 
     session = ConfirmSession(store, tax, top)
-    run_confirm(session)
+    run_confirm(session, sender_filter=sender)
     cov = session.coverage()
     typer.echo(f"Rules now project {cov.covered}/{cov.total} "
                f"({cov.fraction * 100:.1f}%) coverage.")

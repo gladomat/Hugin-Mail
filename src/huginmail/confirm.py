@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Literal
 
 from .models import Deferral, SenderProfile, SenderRule, TagTaxonomy
-from .report import top_senders
+from .report import senders_matching, top_senders
 from .rules import Resolver, valid_leaves
 from .store import Store
 
@@ -73,8 +73,13 @@ class ConfirmSession:
         self.user = user or getpass.getuser()
 
     # --- queue ----------------------------------------------------------
-    def build_queue(self) -> list[QueueItem]:
-        profiles = top_senders(self.store, self.top)
+    def build_queue(self, sender_filter: str | None = None) -> list[QueueItem]:
+        # `sender_filter` reaches senders at any rank (bypasses top-N); without
+        # it, the queue is the top-N head.
+        if sender_filter:
+            profiles = senders_matching(self.store, sender_filter)
+        else:
+            profiles = top_senders(self.store, self.top)
         rules = {(r.scope, r.key): r for r in self.store.get_rules()}
         defs = {(d.scope, d.key): d for d in self.store.get_deferrals()}
         items = self._domain_items(profiles, rules, defs)
