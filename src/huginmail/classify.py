@@ -5,14 +5,18 @@ matches is not re-written."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 
 from .config import LlmConfig
 from .llm import LlmClient, classify_message
 from .models import ClassificationRecord, TagTaxonomy
 from .rules import Resolver
 from .store import Store
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,6 +69,7 @@ def classify_llm_batch(
     store: Store, tax: TagTaxonomy, client: LlmClient, cfg: LlmConfig,
     limit: int | None = None, keyword_authoritative: bool = True,
     confidence_threshold: float = 0.0,
+    on_item: Callable[[int, str, float], None] | None = None,
 ) -> BatchResult:
     """Classify rule-uncovered messages via the LLM (K=1 one-shot per message),
     writing method='llm' records with confidence, rationale, and provenance.
@@ -89,6 +94,10 @@ def classify_llm_batch(
             tag, subtag = "unclassified", None  # abstain: too uncertain
         if tag == "unclassified":
             res.unclassified += 1
+        if on_item is not None:
+            on_item(res.called, tag, out.confidence)
+        log.debug("uid=%s %s conf=%.2f%s", msg.uid, tag, out.confidence,
+                  " [truncated]" if out.truncated else "")
         store.add_classification(ClassificationRecord(
             uid=msg.uid, folder=msg.folder, tag=tag,
             subtags=(subtag,) if subtag else (),

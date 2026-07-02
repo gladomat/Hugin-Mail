@@ -8,7 +8,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from .models import ClassificationRecord, Deferral, EmailMessage, SenderRule
+from .models import (
+    AuditFinding,
+    ClassificationRecord,
+    Deferral,
+    EmailMessage,
+    SenderRule,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -292,3 +298,33 @@ class Store:
     def clear_deferral(self, scope: str, key: str) -> None:
         with self._tx() as c:
             c.execute("DELETE FROM deferrals WHERE scope=? AND key=?", (scope, key))
+
+    # --- audit findings -------------------------------------------------
+    def replace_audit_findings(self, findings: list[AuditFinding]) -> None:
+        """Audit is regenerated each run: clear then repopulate."""
+        with self._tx() as c:
+            c.execute("DELETE FROM audit_findings")
+            c.executemany(
+                """INSERT INTO audit_findings
+                   (uid, folder, assigned_tag, suspected_tag, trigger_keywords, resolved)
+                   VALUES (?,?,?,?,?,?)""",
+                [(f.uid, f.folder, f.assigned_tag, f.suspected_tag,
+                  ",".join(f.trigger_keywords), int(f.resolved)) for f in findings],
+            )
+
+    def get_audit_findings(self) -> list[AuditFinding]:
+        rows = self._conn.execute("SELECT * FROM audit_findings").fetchall()
+        return [
+            AuditFinding(
+                uid=r["uid"], folder=r["folder"], assigned_tag=r["assigned_tag"],
+                suspected_tag=r["suspected_tag"],
+                trigger_keywords=tuple(k for k in r["trigger_keywords"].split(",") if k),
+                resolved=bool(r["resolved"]),
+            )
+            for r in rows
+        ]
+
+    def open_finding_count(self) -> int:
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM audit_findings WHERE resolved=0"
+        ).fetchone()[0]

@@ -45,8 +45,13 @@ hugin report summary           # SUMMARY.md — incl. lowest-confidence calls to
 # then correct only what's wrong, from the results:
 hugin confirm --sender <name>  # override/defer specific senders (sender rules win)
 hugin classify                 # re-apply; your corrections override the LLM
+hugin audit                    # Pass 5: flag tag/keyword contradictions to review
+hugin export rules --format sieve   # proposed sender→tag rules (never installed)
 hugin status                   # coverage + modes, any time
 ```
+
+Add `-v` to any command for debug logging; long runs (`sync`, `classify --all`)
+show a live progress line.
 
 **LLM-first by default.** Confirmed sender rules always win; keyword rules are
 *advisory* (they hint the model, they don't decide). You don't hand-review before
