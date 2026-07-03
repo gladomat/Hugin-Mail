@@ -11,7 +11,7 @@ from .store import Store
 from .sync import sync_folder
 from .taxonomy import check_budget, load_taxonomy
 
-app = typer.Typer(help="hugin — local-first, read-only email triage", no_args_is_help=True)
+app = typer.Typer(help="hugin — local-first email triage", no_args_is_help=True)
 report_app = typer.Typer(help="Generate reports")
 app.add_typer(report_app, name="report")
 
@@ -337,6 +337,96 @@ def review(
     write_summary(store, tax, cfg.data_dir)
     typer.echo("Review done; SUMMARY.md refreshed.")
     store.close()
+
+
+@app.command()
+def organize(
+    apply: bool = typer.Option(
+        False, help="Execute the moves. Without this it's a dry-run plan only."),
+    folder: str = typer.Option(
+        None, help="Source folder (default: config organize.source_folder)."),
+) -> None:
+    """Writeback pass: move each classified message to a destination folder based
+    on its winning tag. Dry-run by default; provider-agnostic (standard IMAP
+    MOVE/COPY — no Gmail assumptions). This is the ONLY mutating command."""
+    cfg = load_config()
+    store = _open(cfg)
+    tax = load_taxonomy(cfg.taxonomy_version)
+    ocfg = cfg.organize
+    if folder:
+        ocfg = ocfg.model_copy(update={"source_folder": folder})
+
+    from .organize import plan_actions
+
+    actions = plan_actions(store, tax, ocfg)
+    if not actions:
+        typer.echo(f"Nothing to organize in {ocfg.source_folder}. "
+                   "Run `hugin classify` / `hugin review` first.")
+        store.close()
+        raise typer.Exit(0)
+
+    by_dest: dict[str, int] = {}
+    for a in actions:
+        by_dest[a.dest] = by_dest.get(a.dest, 0) + 1
+    for a in actions:
+        typer.echo(f"  uid={a.uid:<7} {a.leaf:<18} → {a.dest:<18} "
+                   f"{a.subject[:48]}")
+    typer.echo("")
+    summary = ", ".join(f"{d} ({n})" for d, n in sorted(by_dest.items()))
+    typer.echo(f"{len(actions)} messages → {summary}")
+
+    if not apply:
+        typer.secho(f"Dry-run ({ocfg.mechanism}). Re-run with --apply to execute.",
+                    fg=typer.colors.YELLOW)
+        store.close()
+        raise typer.Exit(0)
+
+    password = get_imap_password(cfg.imap.username)
+    if not cfg.imap.host or not password:
+        typer.secho(
+            "IMAP not configured. Set imap.host/username and provide the password "
+            "via HUGIN_IMAP_PASSWORD or the OS keychain.",
+            fg=typer.colors.RED,
+        )
+        store.close()
+        raise typer.Exit(1)
+
+    from .organize_imap import ImapWriteSource
+
+    src = ImapWriteSource(cfg.imap.host, cfg.imap.port, cfg.imap.username, password)
+    try:
+        live_uidvalidity = src.select(ocfg.source_folder)
+        cursor = store.get_cursor(ocfg.source_folder)
+        if cursor is None or int(cursor["uidvalidity"]) != live_uidvalidity:
+            typer.secho(
+                f"UIDVALIDITY mismatch for {ocfg.source_folder} "
+                f"(indexed={cursor['uidvalidity'] if cursor else 'none'}, "
+                f"server={live_uidvalidity}). UIDs may have been reused; re-run "
+                "`hugin sync` before organizing to avoid moving the wrong messages.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+
+        present = src.existing_uids(ocfg.source_folder)
+        src.select(ocfg.source_folder)  # re-select read-write for the writes
+        moved = skipped = 0
+        for dest in sorted(by_dest):
+            if ocfg.create_missing:
+                src.ensure_folder(dest)
+            uids = [a.uid for a in actions
+                    if a.dest == dest and a.uid in present]
+            skipped += sum(1 for a in actions
+                           if a.dest == dest and a.uid not in present)
+            src.apply(uids, dest, ocfg.mechanism)
+            moved += len(uids)
+        typer.secho(
+            f"Done: {moved} {ocfg.mechanism}d"
+            + (f", {skipped} already gone (skipped)" if skipped else ""),
+            fg=typer.colors.GREEN,
+        )
+    finally:
+        src.close()
+        store.close()
 
 
 @app.command()

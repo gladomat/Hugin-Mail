@@ -16,7 +16,9 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | `taxonomies/*.yaml` | Versioned taxonomy artifacts (data, not code) |
 | `hints.py` | Deterministic keyword-hint from taxonomy rules (Pass 0) |
 | `sync.py` | Read-only sync engine + `ImapSource` protocol + mutation guard |
-| `sync_imap.py` | Real imap-tools adapter (EXAMINE + BODY.PEEK) |
+| `sync_imap.py` | Real imap-tools adapter, read-only (EXAMINE + BODY.PEEK) |
+| `organize.py` | Writeback planner: winning leaf → destination folder (pure, UI-free) |
+| `organize_imap.py` | Write-capable imap-tools adapter (MOVE/COPY) — the only mutating adapter |
 | `report.py` | Polars sender aggregation + top-N Markdown report (Pass 1) |
 | `rules.py` | `Resolver`: address→domain→keyword→LLM order; leaf validation |
 | `confirm.py` | Pass 2 session logic (queue, accept/override/defer, coverage) — UI-free |
@@ -31,7 +33,7 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | `review.py` | Per-message review session (retag LLM calls → human records) — UI-free |
 | `review_tui.py` | Textual TUI driver over `ReviewSession` |
 | `log.py` | Logging configuration (CLI `-v/-q`) |
-| `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `audit`, `report`, `export`, `taxonomy` |
+| `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `review`, `organize`, `audit`, `compare`, `report`, `export`, `taxonomy` |
 
 ## tests/
 Mirror per module. `conftest.py` provides `store`, `tax`, `FakeImapSource`.

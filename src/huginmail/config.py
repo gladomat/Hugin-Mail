@@ -38,6 +38,28 @@ class LlmConfig(BaseModel):
     rationale: Literal["terse", "full", "off"] = "terse"
 
 
+class OrganizeConfig(BaseModel):
+    """Writeback pass (`hugin organize`). Provider-agnostic: destinations are
+    plain IMAP folder names moved via standard COPY+\\Deleted+EXPUNGE — no
+    Gmail/X-GM-LABELS assumptions. A move on Gmail happens to relabel; the code
+    neither knows nor depends on that."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # 'move' clears the source folder (COPY→dest, delete original); 'copy' keeps
+    # the original in place (non-destructive, for cautious first runs).
+    mechanism: Literal["move", "copy"] = "move"
+    source_folder: str = "INBOX"
+    # Leaves whose messages are left untouched in the source folder.
+    skip_tags: tuple[str, ...] = ("keep", "unclassified")
+    # 'junk' (and its subtags) route here; never Trash, never deletion.
+    junk_folder: str = "Junk"
+    # Explicit leaf→folder or tag→folder overrides; auto Title-case otherwise.
+    map: dict[str, str] = Field(default_factory=dict)
+    # CREATE the destination folder if the server doesn't have it.
+    create_missing: bool = True
+
+
 class Config(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -45,6 +67,7 @@ class Config(BaseModel):
     taxonomy_version: str = "v1"
     imap: ImapConfig = ImapConfig()
     llm: LlmConfig = LlmConfig()
+    organize: OrganizeConfig = OrganizeConfig()
     store_full_bodies: bool = False
     # When False (default), keyword rules are advisory hints only and the LLM
     # decides; when True, they classify deterministically (fast path). See #18.
@@ -82,7 +105,9 @@ def load_config(data_dir: Path | None = None) -> Config:
     raw.pop("data_dir", None)  # data dir is located, not self-referential
     imap = ImapConfig(**raw.pop("imap", {})) if "imap" in raw else ImapConfig()
     llm = LlmConfig(**raw.pop("llm", {})) if "llm" in raw else LlmConfig()
-    return Config(data_dir=resolved, imap=imap, llm=llm, **raw)
+    organize = (OrganizeConfig(**raw.pop("organize", {}))
+                if "organize" in raw else OrganizeConfig())
+    return Config(data_dir=resolved, imap=imap, llm=llm, organize=organize, **raw)
 
 
 def _read_toml(path: Path) -> dict:

@@ -1,17 +1,26 @@
 # AGENTS.md — hugin-mail (root DOX)
 
 ## Purpose
-Local-first, read-only email triage with local LLMs. Index a mailbox over IMAP,
-classify with rules + a local LLM, produce reviewable reports. Spec:
-`docs/prd/PRD_hugin-mail_v0.2.md`.
+Local-first email triage with local LLMs. Index a mailbox over IMAP, classify
+with rules + a local LLM, review, and optionally organize (move messages to
+folders). Spec: `docs/prd/PRD_hugin-mail_v0.2.md`.
 
 ## Ownership
 Root contract for the whole repo. Domain: sync, taxonomy, classification, reports.
 
 ## Local Contracts
-- **v1 is strictly read-only.** No IMAP mutation of any kind (no STORE, EXPUNGE,
-  COPY, flags, folders). `sync.py` enforces this via `MUTATING_COMMANDS` +
-  `_assert_read_only`; every sync path must run through it.
+- **Indexing is strictly read-only.** The sync/index path performs no IMAP
+  mutation (no STORE, EXPUNGE, COPY, flags, folders); `sync.py` enforces this
+  via `MUTATING_COMMANDS` + `_assert_read_only`, and `sync_imap.py` selects
+  EXAMINE + BODY.PEEK. Every sync path must run through the guard.
+- **`organize` is the only mutating pass** and it is opt-in. Writes go solely
+  through `organize_imap.ImapWriteSource` (standard IMAP MOVE/COPY), never the
+  sync adapter. Contract: **provider-agnostic** (plain folder names, no
+  Gmail/X-GM-LABELS), **dry-run by default** (`--apply` required to execute),
+  aborts on UIDVALIDITY mismatch vs the sync cursor, only touches UIDs still
+  present in the source folder (idempotent), and never deletes — junk routes to
+  a configurable folder (`organize.junk_folder`), never Trash. Destinations come
+  from `[organize]` config (auto Title-case of the leaf, or explicit `map`).
 - **No cloud LLM.** All inference local (OpenAI-compatible endpoint / Ollama).
   Sampling profile sent explicitly per request; JSON validated by Pydantic;
   invalid → retry once → `unclassified`. Abstain below confidence over guessing.
