@@ -28,6 +28,8 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | `summary.py` | `SUMMARY.md` standing overview + needs-review + audit count |
 | `audit.py` | Pass 5: tag/keyword contradiction scan → findings + report |
 | `compare.py` | Dry-run model comparison (classify a sample under N models, diff) |
+| `review.py` | Per-message review session (retag LLM calls → human records) — UI-free |
+| `review_tui.py` | Textual TUI driver over `ReviewSession` |
 | `log.py` | Logging configuration (CLI `-v/-q`) |
 | `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `audit`, `report`, `export`, `taxonomy` |
 

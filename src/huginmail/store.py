@@ -208,6 +208,30 @@ class Store:
             "SELECT COUNT(DISTINCT folder || ':' || uid) FROM classifications"
         ).fetchone()[0]
 
+    def review_candidates(self, taxonomy_hash: str, min_conf: float = 0.0,
+                          max_conf: float = 1.0, tag: str | None = None
+                          ) -> list[sqlite3.Row]:
+        """Latest LLM classification per message within a confidence band, joined
+        to the message (subject + snippet), lowest-confidence first."""
+        params: list = [taxonomy_hash, taxonomy_hash, min_conf, max_conf]
+        tag_sql = ""
+        if tag:
+            tag_sql = " AND c.tag = ?"
+            params.append(tag)
+        return self._conn.execute(
+            f"""SELECT m.folder, m.uid, m.subject, m.snippet, m.from_addr, c.tag,
+                       c.confidence, c.rationale
+                FROM classifications c
+                JOIN (SELECT folder, uid, MAX(created_at) mx FROM classifications
+                      WHERE taxonomy_hash=? GROUP BY folder, uid) t
+                  ON c.folder=t.folder AND c.uid=t.uid AND c.created_at=t.mx
+                JOIN messages m ON m.folder=c.folder AND m.uid=c.uid
+                WHERE c.taxonomy_hash=? AND c.method='llm'
+                  AND c.confidence BETWEEN ? AND ?{tag_sql}
+                ORDER BY c.confidence ASC""",
+            params,
+        ).fetchall()
+
     def latest_tag(self, folder: str, uid: int, taxonomy_hash: str) -> str | None:
         row = self._conn.execute(
             """SELECT tag FROM classifications

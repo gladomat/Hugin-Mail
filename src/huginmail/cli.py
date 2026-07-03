@@ -314,6 +314,32 @@ def export_rules_cmd(
 
 
 @app.command()
+def review(
+    min: float = typer.Option(0.0, help="Min confidence to review"),
+    max: float = typer.Option(1.0, help="Max confidence to review"),
+    tag: str = typer.Option(None, help="Only review this assigned tag"),
+) -> None:
+    """Walk LLM classifications (worst-first) in a TUI and correct individual
+    messages. A retag writes a human record that overrides the model's."""
+    cfg = load_config()
+    store = _open(cfg)
+    tax = load_taxonomy(cfg.taxonomy_version)
+
+    from .review import ReviewSession
+    from .review_tui import run_review
+
+    session = ReviewSession(store, tax, min_conf=min, max_conf=max, tag=tag)
+    if not session.candidates():
+        typer.echo("No LLM classifications in that band. Run `hugin classify` first.")
+        raise typer.Exit(0)
+    run_review(session)
+    from .summary import write_summary
+    write_summary(store, tax, cfg.data_dir)
+    typer.echo("Review done; SUMMARY.md refreshed.")
+    store.close()
+
+
+@app.command()
 def audit() -> None:
     """Pass 5: scan for tag/keyword contradictions → audit report."""
     cfg = load_config()
