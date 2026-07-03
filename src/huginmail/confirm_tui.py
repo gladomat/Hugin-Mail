@@ -10,6 +10,7 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
+from textual.content import Content
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
 from .confirm import ConfirmSession, LeafError, QueueItem
@@ -101,10 +102,10 @@ class ConfirmApp(App):
         cov = self.session.coverage()
         flag = "  ⚠ below 60% target" if cov.below_target else ""
         note = f"   filter: {self.search_text}" if self.search_text else ""
-        self.query_one("#cov", Static).update(
+        self.query_one("#cov", Static).update(Content(
             f"Projected coverage: {cov.covered}/{cov.total} "
             f"({cov.fraction * 100:.1f}%){flag}{note}"
-        )
+        ))
 
     def _current(self) -> QueueItem | None:
         if not self.items:
@@ -193,7 +194,7 @@ class ConfirmApp(App):
         self.refresh_queue()
 
     def _notify(self, msg: str) -> None:
-        self.query_one("#cov", Static).update(f"⚠ {msg}")
+        self.query_one("#cov", Static).update(Content(f"⚠ {msg}"))
 
 
 def run_confirm(session: ConfirmSession, sender_filter: str | None = None) -> None:
