@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from huginmail.compare import compare_models, render_comparison
+from huginmail.compare import (
+    agreement,
+    load_runs,
+    render_diff,
+    reset_runs,
+    run_model,
+)
 from huginmail.config import LlmConfig
 from huginmail.sync import sync_folder
 from conftest import FakeImapSource, raw
 
 
 class ByModelClient:
-    """Returns a canned reply keyed by the config's model_id."""
+    """Canned reply keyed by the config's model_id."""
     def __init__(self, cfg: LlmConfig):
         self.model = cfg.model_id
 
@@ -22,47 +28,42 @@ def _seed(store, tax, n=5):
     sync_folder(store, FakeImapSource({"INBOX": (10, msgs)}), tax, "INBOX")
 
 
-def test_compare_runs_all_models(store, tax):
+def test_single_run_saves_and_no_persist(store, tax, tmp_path):
     _seed(store, tax, 4)
-    cmp = compare_models(store, tax, LlmConfig(), ["small", "big"], n=4,
-                         client_factory=ByModelClient)
-    assert len(cmp.sample) == 4 and len(cmp.runs) == 2
-    assert {r.model_id for r in cmp.runs} == {"small", "big"}
-    assert all(len(r.outcomes) == 4 for r in cmp.runs)
+    run_model(store, tax, LlmConfig(), "small", 4, tmp_path,
+              client_factory=ByModelClient)
+    runs = load_runs(tmp_path)
+    assert len(runs) == 1 and runs[0].model_id == "small"
+    assert store.classification_count() == 0  # dry-run
 
 
-def test_no_persist(store, tax):
+def test_two_runs_align_on_same_sample(store, tax, tmp_path):
+    _seed(store, tax, 6)
+    run_model(store, tax, LlmConfig(), "small", 3, tmp_path,
+              client_factory=ByModelClient)
+    # second run reuses the first run's sample even with a larger --sample
+    run_model(store, tax, LlmConfig(), "big", 99, tmp_path,
+              client_factory=ByModelClient)
+    runs = load_runs(tmp_path)
+    assert len(runs) == 2
+    assert {u for u, _, _ in runs[0].sample} == {u for u, _, _ in runs[1].sample}
+
+
+def test_agreement_zero_when_models_differ(store, tax, tmp_path):
+    _seed(store, tax, 4)
+    run_model(store, tax, LlmConfig(), "small", 4, tmp_path,
+              client_factory=ByModelClient)
+    run_model(store, tax, LlmConfig(), "big", 4, tmp_path,
+              client_factory=ByModelClient)
+    assert agreement(load_runs(tmp_path)) == 0.0
+
+
+def test_render_disagreements_and_reset(store, tax, tmp_path):
     _seed(store, tax, 3)
-    compare_models(store, tax, LlmConfig(), ["small", "big"], n=3,
-                   client_factory=ByModelClient)
-    assert store.classification_count() == 0  # dry-run: nothing written
-
-
-def test_agreement_zero_when_models_differ(store, tax):
-    _seed(store, tax, 4)
-    cmp = compare_models(store, tax, LlmConfig(), ["small", "big"], n=4,
-                         client_factory=ByModelClient)
-    assert cmp.agreement == 0.0  # small→junk, big→newsletter, never agree
-
-
-def test_agreement_full_when_same_model_twice(store, tax):
-    _seed(store, tax, 4)
-    cmp = compare_models(store, tax, LlmConfig(), ["small", "small"], n=4,
-                         client_factory=ByModelClient)
-    assert cmp.agreement == 1.0
-
-
-def test_sample_capped(store, tax):
-    _seed(store, tax, 10)
-    cmp = compare_models(store, tax, LlmConfig(), ["small", "big"], n=3,
-                         client_factory=ByModelClient)
-    assert len(cmp.sample) == 3
-
-
-def test_render_has_table_and_agreement(store, tax):
-    _seed(store, tax, 2)
-    cmp = compare_models(store, tax, LlmConfig(), ["small", "big"], n=2,
-                         client_factory=ByModelClient)
-    md = render_comparison(cmp)
-    assert "Model comparison" in md and "agree" in md
-    assert "small" in md and "big" in md
+    run_model(store, tax, LlmConfig(), "small", 3, tmp_path,
+              client_factory=ByModelClient)
+    run_model(store, tax, LlmConfig(), "big", 3, tmp_path,
+              client_factory=ByModelClient)
+    md = render_diff(load_runs(tmp_path))
+    assert "Model comparison" in md and "small" in md and "big" in md
+    assert reset_runs(tmp_path) == 2 and load_runs(tmp_path) == []
