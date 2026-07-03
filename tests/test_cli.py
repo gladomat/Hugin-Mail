@@ -17,7 +17,7 @@ def test_status_on_empty_store(tmp_path, monkeypatch):
     r = runner.invoke(app, ["status"])
     assert r.exit_code == 0
     assert "Messages indexed:  0" in r.stdout
-    assert "LOCKED" in r.stdout
+    assert "advisory (LLM decides)" in r.stdout
 
 
 def test_taxonomy_command(tmp_path, monkeypatch):
