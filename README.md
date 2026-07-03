@@ -51,7 +51,9 @@ hugin status                   # coverage + modes, any time
 ```
 
 Add `-v` to any command for debug logging; long runs (`sync`, `classify --all`)
-show a live progress line.
+show a live progress line. Classification is output-bound — to speed a full-inbox
+run, raise `llm.concurrency` in config (e.g. `4`–`8`); oMLX continuous-batches
+parallel requests, roughly multiplying throughput.
 
 **LLM-first by default.** Confirmed sender rules always win; keyword rules are
 *advisory* (they hint the model, they don't decide). You don't hand-review before

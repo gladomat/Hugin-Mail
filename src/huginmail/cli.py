@@ -66,6 +66,7 @@ base_url = "http://127.0.0.1:8000/v1"   # oMLX default; Ollama: http://127.0.0.1
 model_id = "mlx-community/Qwen3-4B-Instruct"
 working_budget_tokens = 4096
 confidence_threshold = 0.7              # LLM calls below this land in `unclassified`
+concurrency = 1                         # parallel in-flight requests (raise to ~4-8)
 """
 
 
@@ -243,7 +244,8 @@ def classify(
                 task, description=f"{n} classified (last: {tag} {conf:.2f})")
         bres = classify_llm_batch(
             store, tax, client, cfg.llm, limit=limit, keyword_authoritative=kw,
-            confidence_threshold=cfg.llm.confidence_threshold, on_item=on_item)
+            confidence_threshold=cfg.llm.confidence_threshold, on_item=on_item,
+            concurrency=cfg.llm.concurrency)
         if on_item is not None:
             prog.stop()
         typer.echo(f"LLM: called={bres.called} unclassified={bres.unclassified}")

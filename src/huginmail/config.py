@@ -28,6 +28,9 @@ class LlmConfig(BaseModel):
     working_budget_tokens: int = 4096
     # LLM confidence below this lands in `unclassified` rather than a guess (§8).
     confidence_threshold: float = 0.7
+    # Parallel in-flight classification requests (1 = sequential). Classification
+    # is output-bound; oMLX continuous-batches, so >1 multiplies throughput.
+    concurrency: int = 1
 
 
 class Config(BaseModel):
