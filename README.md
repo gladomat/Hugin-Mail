@@ -40,7 +40,9 @@ base_url = "http://127.0.0.1:8000/v1" # oMLX; Ollama: http://127.0.0.1:11434/v1
 model_id = "…"                        # must match what your server serves
 working_budget_tokens = 4096
 confidence_threshold = 0.7            # LLM calls below this → `unclassified`
-concurrency = 8                       # parallel in-flight requests (1 = serial)
+concurrency = 4                       # parallel in-flight requests (1 = serial)
+max_tokens = 75                       # output cap; lower = faster (output-bound)
+rationale = "terse"                   # terse (≤6 words) | full | off
 ```
 
 ### 3. Provide credentials (never in the config file)

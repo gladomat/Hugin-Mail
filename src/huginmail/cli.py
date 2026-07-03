@@ -66,7 +66,9 @@ base_url = "http://127.0.0.1:8000/v1"   # oMLX default; Ollama: http://127.0.0.1
 model_id = "mlx-community/Qwen3-4B-Instruct"
 working_budget_tokens = 4096
 confidence_threshold = 0.7              # LLM calls below this land in `unclassified`
-concurrency = 1                         # parallel in-flight requests (raise to ~4-8)
+concurrency = 1                         # parallel in-flight requests (raise to ~4)
+max_tokens = 75                         # output cap; lower = faster (output-bound)
+rationale = "terse"                     # terse (<=6 words) | full | off
 """
 
 
