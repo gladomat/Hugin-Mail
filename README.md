@@ -22,20 +22,45 @@ source .venv/bin/activate      # or prefix commands with `uv run`
 hugin init-config              # writes <data_dir>/config.toml
 ```
 Data dir defaults to `~/.local/share/hugin-mail` (override with `HUGIN_DATA_DIR`).
-Edit the generated `config.toml`:
-- `[imap]` — your `host`, `username`, and `folders`.
-- `[llm]` — leave the oMLX default (`http://127.0.0.1:8000/v1`) or point at Ollama
-  (`http://127.0.0.1:11434/v1`) and set `model_id`.
+Edit the generated `config.toml`. `host` must be a bare hostname (no `imaps://`
+scheme):
+```toml
+taxonomy_version = "v1"
+store_full_bodies = false
+keyword_rules_authoritative = false   # false = LLM decides; true = keyword fast-path
 
-### 3. Provide the IMAP password (never in the config file)
+[imap]
+host = "imap.gmail.com"
+port = 993
+username = "you@example.com"
+folders = ["INBOX"]
+
+[llm]
+base_url = "http://127.0.0.1:8000/v1" # oMLX; Ollama: http://127.0.0.1:11434/v1
+model_id = "…"                        # must match what your server serves
+working_budget_tokens = 4096
+confidence_threshold = 0.7            # LLM calls below this → `unclassified`
+concurrency = 8                       # parallel in-flight requests (1 = serial)
+```
+
+### 3. Provide credentials (never in the config file)
+IMAP password:
 ```bash
-export HUGIN_IMAP_PASSWORD='…'        # simplest; or store in the OS keychain:
+export HUGIN_IMAP_PASSWORD='…'        # or OS keychain:
 # python -c "import keyring; keyring.set_password('hugin-mail','you@example.com','…')"
+```
+Gmail: requires a 16-char **App Password** (2-Step Verification on), not your
+account password, with IMAP enabled in Gmail settings.
+
+LLM endpoint API key — only if your server requires auth (oMLX/vLLM often do):
+```bash
+export HUGIN_LLM_API_KEY='…'          # falls back to OPENAI_API_KEY, else none
 ```
 
 ### 4. Start your local LLM
 Run oMLX (or Ollama) so the endpoint in `config.toml` is live. Only needed for
-the LLM classification steps (5c+), not for sync/rules.
+the LLM classification steps, not for sync/rules. Confirm it answers:
+`curl -s -H "Authorization: Bearer $HUGIN_LLM_API_KEY" http://127.0.0.1:8000/v1/models`
 
 ### 5. Run the pipeline (LLM-first; each command idempotent + resumable)
 ```bash
