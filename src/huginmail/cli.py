@@ -330,6 +330,39 @@ def audit() -> None:
 
 
 @app.command()
+def compare(
+    models: str = typer.Option(..., help="Comma-separated model ids to compare"),
+    sample: int = typer.Option(20, help="Number of messages to classify per model"),
+) -> None:
+    """Dry-run: classify a fixed sample under several models and diff the results.
+    Nothing is persisted — use it to judge model choice on quality vs latency."""
+    cfg = load_config()
+    store = _open(cfg)
+    tax = load_taxonomy(cfg.taxonomy_version)
+    if store.message_count() == 0:
+        typer.secho("No messages indexed. Run `hugin sync` first.",
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    from .compare import compare_models, write_comparison
+
+    model_ids = [m.strip() for m in models.split(",") if m.strip()]
+    if len(model_ids) < 2:
+        typer.secho("Give at least two models: --models a,b", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    typer.echo(f"Comparing {model_ids} on {sample} messages…")
+    cmp = compare_models(store, tax, cfg.llm, model_ids, sample,
+                         concurrency=cfg.llm.concurrency)
+    path = write_comparison(cmp, cfg.reports_dir)
+    for r in cmp.runs:
+        typer.echo(f"  {r.model_id}: {r.elapsed:.1f}s "
+                   f"({r.elapsed / max(len(cmp.sample), 1):.2f}s/msg)")
+    typer.echo(f"Agreement: {cmp.agreement * 100:.0f}%. Wrote {path}")
+    store.close()
+
+
+@app.command()
 def taxonomy() -> None:
     """Show the active taxonomy and its rendered token budget."""
     cfg = load_config()
