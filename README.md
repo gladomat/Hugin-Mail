@@ -70,7 +70,8 @@ hugin sync                     # Pass 0: read-only index (EXAMINE + BODY.PEEK)
 hugin classify --all           # LLM classifies the whole inbox; uncertain → unclassified
 hugin report summary           # SUMMARY.md — incl. lowest-confidence calls to review
 # then correct only what's wrong, from the results:
-hugin confirm --sender <name>  # override/defer specific senders (sender rules win)
+hugin review --max 0.9         # walk LLM calls worst-first, retag individual messages
+hugin confirm --sender <name>  # or fix a whole sender at once (sender rules win)
 hugin classify                 # re-apply; your corrections override the LLM
 hugin audit                    # Pass 5: flag tag/keyword contradictions to review
 hugin export rules --format sieve   # proposed sender→tag rules (never installed)
