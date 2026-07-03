@@ -82,6 +82,22 @@ show a live progress line. Classification is output-bound — to speed a full-in
 run, raise `llm.concurrency` in config (e.g. `4`–`8`); oMLX continuous-batches
 parallel requests, roughly multiplying throughput.
 
+### Choosing a model — `hugin compare`
+Compare models on a fixed sample without persisting anything. Because most local
+setups hold **one model at a time**, you run it once per model, reloading the
+server between:
+```bash
+hugin compare --sample 20                 # classify sample under the loaded model, save run
+# reload the server with the next model, then:
+hugin compare --model <other-id>          # reuses the same sample, writes reports/compare.md
+hugin compare --show                      # re-diff saved runs without re-running
+hugin compare --reset                     # clear saved runs
+```
+`compare.md` lists **disagreements first** (✗) with each model's tag, confidence,
+and rationale, plus agreement % and per-model timing. Disagreements usually point
+at a fuzzy *taxonomy* boundary, not a better model — sharpen the tag definitions
+before paying for a slower model. Nothing here touches your classification store.
+
 **LLM-first by default.** Confirmed sender rules always win; keyword rules are
 *advisory* (they hint the model, they don't decide). You don't hand-review before
 classifying — `classify --all` does the whole inbox, then you fix mistakes from
