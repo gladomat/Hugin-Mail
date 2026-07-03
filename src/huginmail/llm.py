@@ -16,6 +16,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import LlmConfig
+from .hints import keyword_hint
 from .models import EmailMessage, TagTaxonomy
 from .rules import valid_leaves
 from .taxonomy import render_prompt
@@ -75,6 +76,9 @@ def classify_message(
 ) -> LlmOutcome:
     system = load_prompt().format(taxonomy=render_prompt(tax))
     payload, truncated = build_payload(msg)
+    hint = keyword_hint(msg, tax)
+    if hint:
+        payload += f"\nKeyword hint (advisory, may be wrong): {hint}"
     leaves = valid_leaves(tax)
 
     parsed = _try_classify(client, system, payload)
@@ -111,8 +115,10 @@ class OpenAiClient:
     def __init__(self, cfg: LlmConfig) -> None:
         from openai import OpenAI
 
+        from .config import get_llm_api_key
+
         self.cfg = cfg
-        self._client = OpenAI(base_url=cfg.base_url, api_key="not-needed")
+        self._client = OpenAI(base_url=cfg.base_url, api_key=get_llm_api_key())
 
     def complete(self, system: str, user: str, sampling: dict) -> str:
         resp = self._client.chat.completions.create(

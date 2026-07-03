@@ -31,10 +31,16 @@ def valid_leaves(tax: TagTaxonomy) -> set[str]:
 
 
 class Resolver:
-    """Resolves a message to a rule-based tag, or None if an LLM call is needed."""
+    """Resolves a message to a rule-based tag, or None if an LLM call is needed.
 
-    def __init__(self, rules: list[SenderRule], tax: TagTaxonomy) -> None:
+    Sender rules are always authoritative. Keyword rules classify only when
+    `keyword_authoritative` is True; otherwise they stay advisory (a hint fed to
+    the LLM) and the message falls through to the model (#18)."""
+
+    def __init__(self, rules: list[SenderRule], tax: TagTaxonomy,
+                 keyword_authoritative: bool = True) -> None:
         self.tax = tax
+        self.keyword_authoritative = keyword_authoritative
         self._leaves = valid_leaves(tax)
         self._by_addr: dict[str, SenderRule] = {}
         self._by_domain: dict[str, SenderRule] = {}
@@ -49,7 +55,8 @@ class Resolver:
         rule = self._by_addr.get(msg.from_addr) or self._by_domain.get(msg.from_domain)
         if rule is not None:
             return Resolved(rule.tag, rule.subtag, "sender_rule", 1.0)
-        hint = keyword_hint(msg, self.tax)
-        if hint is not None:
-            return Resolved(hint, None, "keyword_rule", 1.0)
+        if self.keyword_authoritative:
+            hint = keyword_hint(msg, self.tax)
+            if hint is not None:
+                return Resolved(hint, None, "keyword_rule", 1.0)
         return None

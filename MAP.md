@@ -24,9 +24,11 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | `classify.py` | Rules pass (`classify_rules`) + LLM batch (`classify_llm_batch`) |
 | `llm.py` | `LlmClient` protocol, `OpenAiClient`, sampling, budget, JSON+retry |
 | `prompts/*.txt` | Versioned prompt templates (`prompt_version`) |
-| `export.py` | Manifest → Parquet + CSV twin |
-| `summary.py` | `SUMMARY.md` standing overview |
-| `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `report`, `export`, `taxonomy` |
+| `export.py` | Manifest → Parquet + CSV twin; proposed rules → text/Sieve |
+| `summary.py` | `SUMMARY.md` standing overview + needs-review + audit count |
+| `audit.py` | Pass 5: tag/keyword contradiction scan → findings + report |
+| `log.py` | Logging configuration (CLI `-v/-q`) |
+| `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `audit`, `report`, `export`, `taxonomy` |
 
 ## tests/
 Mirror per module. `conftest.py` provides `store`, `tax`, `FakeImapSource`.

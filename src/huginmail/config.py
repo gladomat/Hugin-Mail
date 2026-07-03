@@ -26,6 +26,11 @@ class LlmConfig(BaseModel):
     base_url: str = "http://127.0.0.1:8000/v1"
     model_id: str = "mlx-community/Qwen3-4B-Instruct"
     working_budget_tokens: int = 4096
+    # LLM confidence below this lands in `unclassified` rather than a guess (§8).
+    confidence_threshold: float = 0.7
+    # Parallel in-flight classification requests (1 = sequential). Classification
+    # is output-bound; oMLX continuous-batches, so >1 multiplies throughput.
+    concurrency: int = 1
 
 
 class Config(BaseModel):
@@ -36,6 +41,9 @@ class Config(BaseModel):
     imap: ImapConfig = ImapConfig()
     llm: LlmConfig = LlmConfig()
     store_full_bodies: bool = False
+    # When False (default), keyword rules are advisory hints only and the LLM
+    # decides; when True, they classify deterministically (fast path). See #18.
+    keyword_rules_authoritative: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -84,6 +92,14 @@ def _read_toml(path: Path) -> dict:
 def _env_data_dir() -> Path | None:
     raw = os.environ.get("HUGIN_DATA_DIR")
     return Path(raw).expanduser() if raw else None
+
+
+def get_llm_api_key() -> str:
+    """Resolve the local LLM endpoint's API key. `HUGIN_LLM_API_KEY` first, then
+    `OPENAI_API_KEY`, else a placeholder for servers that ignore auth."""
+    return (os.environ.get("HUGIN_LLM_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or "not-needed")
 
 
 def get_imap_password(username: str) -> str | None:

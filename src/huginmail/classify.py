@@ -5,14 +5,18 @@ matches is not re-written."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 
 from .config import LlmConfig
 from .llm import LlmClient, classify_message
 from .models import ClassificationRecord, TagTaxonomy
 from .rules import Resolver
 from .store import Store
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -23,8 +27,9 @@ class ClassifyResult:
     uncovered: int = 0  # left for the LLM pass
 
 
-def classify_rules(store: Store, tax: TagTaxonomy) -> ClassifyResult:
-    resolver = Resolver(store.get_rules(), tax)
+def classify_rules(store: Store, tax: TagTaxonomy,
+                   keyword_authoritative: bool = True) -> ClassifyResult:
+    resolver = Resolver(store.get_rules(), tax, keyword_authoritative)
     for r in resolver.invalid:
         store.mark_rule_stale(r.scope, r.key)
 
@@ -62,30 +67,68 @@ class BatchResult:
 
 def classify_llm_batch(
     store: Store, tax: TagTaxonomy, client: LlmClient, cfg: LlmConfig,
-    limit: int | None = None,
+    limit: int | None = None, keyword_authoritative: bool = True,
+    confidence_threshold: float = 0.0,
+    on_item: Callable[[int, str, float], None] | None = None,
+    concurrency: int = 1,
 ) -> BatchResult:
     """Classify rule-uncovered messages via the LLM (K=1 one-shot per message),
-    writing method='llm' records with confidence, rationale, and provenance."""
-    resolver = Resolver(store.get_rules(), tax)
+    writing method='llm' records with confidence, rationale, and provenance.
+
+    A message whose LLM confidence is below `confidence_threshold` is recorded as
+    `unclassified` (abstention over a guess, §8) — its rationale/confidence are
+    kept so it can be reviewed.
+
+    `concurrency` > 1 runs that many network calls in parallel (thread pool). All
+    SQLite writes happen on this thread; only `classify_message` runs in workers."""
+    resolver = Resolver(store.get_rules(), tax, keyword_authoritative)
+    worklist = _worklist(store, tax, resolver, limit)
     res = BatchResult()
     now = datetime.now()
-    for msg in store.iter_messages():
-        if limit is not None and res.called >= limit:
-            break
-        if resolver.resolve(msg) is not None:
-            continue  # covered by a rule; skip
-        if store.latest_tag(msg.folder, msg.uid, tax.content_hash) is not None:
-            continue  # already has a classification for this taxonomy
-        out = classify_message(client, tax, msg, cfg)
+
+    def _persist(msg, out) -> None:
         res.called += 1
-        if out.tag == "unclassified":
+        tag, subtag = out.tag, out.subtag
+        if tag != "unclassified" and out.confidence < confidence_threshold:
+            tag, subtag = "unclassified", None  # abstain: too uncertain
+        if tag == "unclassified":
             res.unclassified += 1
+        if on_item is not None:
+            on_item(res.called, tag, out.confidence)
+        log.debug("uid=%s %s conf=%.2f%s", msg.uid, tag, out.confidence,
+                  " [truncated]" if out.truncated else "")
         store.add_classification(ClassificationRecord(
-            uid=msg.uid, folder=msg.folder, tag=out.tag,
-            subtags=(out.subtag,) if out.subtag else (),
+            uid=msg.uid, folder=msg.folder, tag=tag,
+            subtags=(subtag,) if subtag else (),
             confidence=out.confidence, method="llm",
             taxonomy_version=tax.version, taxonomy_hash=tax.content_hash,
             model_id=out.model_id, prompt_version=out.prompt_version,
             rationale=out.rationale, truncated=out.truncated, created_at=now,
         ))
+
+    if concurrency <= 1:
+        for msg in worklist:
+            _persist(msg, classify_message(client, tax, msg, cfg))
+    else:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        with ThreadPoolExecutor(max_workers=concurrency) as ex:
+            futures = {ex.submit(classify_message, client, tax, msg, cfg): msg
+                       for msg in worklist}
+            for fut in as_completed(futures):
+                _persist(futures[fut], fut.result())
     return res
+
+
+def _worklist(store, tax, resolver, limit):
+    """Rule-uncovered, not-yet-classified messages, capped at `limit`."""
+    out = []
+    for msg in store.iter_messages():
+        if limit is not None and len(out) >= limit:
+            break
+        if resolver.resolve(msg) is not None:
+            continue
+        if store.latest_tag(msg.folder, msg.uid, tax.content_hash) is not None:
+            continue
+        out.append(msg)
+    return out

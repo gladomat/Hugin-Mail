@@ -21,7 +21,11 @@ Root contract for the whole repo. Domain: sync, taxonomy, classification, report
 - **Credentials** come from `HUGIN_IMAP_PASSWORD` or OS keychain — never config files.
 - **Provenance is first-class.** Every `ClassificationRecord` stamps method,
   taxonomy version + hash, and (for LLM) model/prompt version.
-- **Resolution order:** sender rule → keyword rule → LLM → `unclassified`.
+- **Resolution order:** sender rule → (keyword rule, only if
+  `keyword_rules_authoritative`) → LLM → `unclassified`. **Default is
+  LLM-first**: keyword rules are advisory hints (fed to the prompt), the model
+  decides; confirmed sender rules always win. LLM calls below
+  `llm.confidence_threshold` (default 0.7) abstain to `unclassified` (#18).
 - **Taxonomy is a versioned artifact** (`taxonomies/*.yaml`), not code; the
   rendered prompt form is token-budget-checked (`taxonomy.check_budget`).
 

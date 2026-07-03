@@ -48,6 +48,7 @@ def render_summary(store: Store, tax: TagTaxonomy) -> str:
         f"- Distinct messages: {distinct}",
         f"- Classified: {classified} ({pct:.1f}%)",
         f"- Unclassified: {unclassified}",
+        f"- Open audit findings: {store.open_finding_count()}",
         "",
         "## Tag distribution",
     ]
@@ -62,7 +63,21 @@ def render_summary(store: Store, tax: TagTaxonomy) -> str:
         lines.append(f"### {tag}")
         for addr, n in senders:
             lines.append(f"- {addr}: {n}")
+    lines += ["", "## Needs review (lowest-confidence LLM calls)"]
+    for addr, subject, tag, conf in _lowest_confidence(df):
+        lines.append(f"- [{conf:.2f}] {tag} — {addr}: {subject[:60]}")
+    if unclassified:
+        lines.append(f"- …plus {unclassified} unclassified message(s) to triage")
     return "\n".join(lines) + "\n"
+
+
+def _lowest_confidence(df: pl.DataFrame, k: int = 15) -> list[tuple[str, str, str, float]]:
+    """The k least-confident LLM classifications — review worst-first."""
+    if df.height == 0 or "method" not in df.columns:
+        return []
+    llm = df.filter(pl.col("method") == "llm").sort("confidence").head(k)
+    return [(r["from_addr"], r["subject"] or "", r["tag"], r["confidence"])
+            for r in llm.iter_rows(named=True)]
 
 
 def write_summary(store: Store, tax: TagTaxonomy, data_dir: Path) -> Path:
