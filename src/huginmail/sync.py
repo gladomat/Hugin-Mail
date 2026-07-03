@@ -9,9 +9,12 @@ sync asserts the log is mutation-free, satisfying the zero-mutation guarantee.
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Callable, Iterable, Protocol, runtime_checkable
+
+log = logging.getLogger(__name__)
 
 from .config import Config
 from .hints import keyword_hint
@@ -104,10 +107,13 @@ def sync_folder(
     tax: TagTaxonomy,
     folder: str,
     full: bool = False,
+    on_fetch: Callable[[int], None] | None = None,
 ) -> SyncResult:
     """Index one folder. Resumable via the stored cursor; forces resync on a
-    UIDVALIDITY change. Dedups by Message-ID across folders (first-seen wins)."""
+    UIDVALIDITY change. Dedups by Message-ID across folders (first-seen wins).
+    `on_fetch(count)` is called after each message is fetched (progress)."""
     uidvalidity = source.examine(folder)
+    log.info("EXAMINE %s (uidvalidity=%s)", folder, uidvalidity)
     cursor = store.get_cursor(folder)
 
     resynced = False
@@ -125,8 +131,13 @@ def sync_folder(
     fetched = deduped = 0
     max_uid = min_uid
 
+    log.info("Fetching %s (BODY.PEEK, uid > %d)…", folder, min_uid)
     for raw in source.fetch(folder, min_uid):
         fetched += 1
+        if on_fetch is not None:
+            on_fetch(fetched)
+        elif fetched % 500 == 0:
+            log.info("  %s: %d fetched…", folder, fetched)
         max_uid = max(max_uid, raw.uid)
         if raw.message_id and raw.message_id in seen_ids:
             deduped += 1
@@ -143,6 +154,8 @@ def sync_folder(
 
     inserted = store.upsert_messages(to_insert, hints)
     store.set_cursor(folder, uidvalidity, max_uid, complete=True)
+    log.info("%s done: fetched=%d inserted=%d deduped=%d", folder, fetched,
+             inserted, deduped)
 
     return SyncResult(
         folder=folder, fetched=fetched, inserted=inserted, deduped=deduped,

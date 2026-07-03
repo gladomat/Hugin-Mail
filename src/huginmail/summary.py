@@ -48,6 +48,7 @@ def render_summary(store: Store, tax: TagTaxonomy) -> str:
         f"- Distinct messages: {distinct}",
         f"- Classified: {classified} ({pct:.1f}%)",
         f"- Unclassified: {unclassified}",
+        f"- Open audit findings: {store.open_finding_count()}",
         "",
         "## Tag distribution",
     ]

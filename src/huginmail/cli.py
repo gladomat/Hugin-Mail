@@ -16,6 +16,23 @@ report_app = typer.Typer(help="Generate reports")
 app.add_typer(report_app, name="report")
 
 
+@app.callback()
+def main(
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Debug-level logging"),
+    quiet: bool = typer.Option(False, "-q", "--quiet", help="Warnings only"),
+) -> None:
+    """Configure logging before any command runs."""
+    from .log import configure
+
+    configure(verbosity=int(verbose), quiet=quiet)
+
+
+def _tty() -> bool:
+    import sys
+
+    return sys.stderr.isatty()
+
+
 def _open(cfg: Config) -> Store:
     cfg.ensure_dirs()
     store = Store(cfg.db_path)
@@ -126,7 +143,17 @@ def sync(
     source = ImapToolsSource(cfg.imap.host, cfg.imap.port, cfg.imap.username, password)
     try:
         for f in folders:
-            res = sync_folder(store, source, tax, f, full=full)
+            if _tty():
+                from rich.progress import Progress, SpinnerColumn, TextColumn
+
+                with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                              transient=True) as prog:
+                    task = prog.add_task(f"{f}: fetching…", total=None)
+                    res = sync_folder(store, source, tax, f, full=full,
+                                      on_fetch=lambda n: prog.update(
+                                          task, description=f"{f}: {n} fetched…"))
+            else:
+                res = sync_folder(store, source, tax, f, full=full)
             typer.echo(
                 f"{f}: fetched={res.fetched} inserted={res.inserted} "
                 f"deduped={res.deduped} uidvalidity={res.uidvalidity}"
@@ -204,9 +231,21 @@ def classify(
         typer.echo(f"LLM classifying {scope} "
                    f"(model={cfg.llm.model_id}, abstain<{cfg.llm.confidence_threshold})…")
         client = OpenAiClient(cfg.llm)
+        on_item = None
+        if _tty():
+            from rich.progress import Progress, SpinnerColumn, TextColumn
+
+            prog = Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                            transient=True)
+            prog.start()
+            task = prog.add_task("classifying…", total=None)
+            on_item = lambda n, tag, conf: prog.update(
+                task, description=f"{n} classified (last: {tag} {conf:.2f})")
         bres = classify_llm_batch(
             store, tax, client, cfg.llm, limit=limit, keyword_authoritative=kw,
-            confidence_threshold=cfg.llm.confidence_threshold)
+            confidence_threshold=cfg.llm.confidence_threshold, on_item=on_item)
+        if on_item is not None:
+            prog.stop()
         typer.echo(f"LLM: called={bres.called} unclassified={bres.unclassified}")
 
     export_manifest(store, tax, cfg.exports_dir)
@@ -253,6 +292,36 @@ def export_manifest_cmd() -> None:
 
     parquet, csv = export_manifest(store, tax, cfg.exports_dir)
     typer.echo(f"Wrote {parquet} and {csv}")
+    store.close()
+
+
+@export_app.command("rules")
+def export_rules_cmd(
+    format: str = typer.Option("text", help="text | sieve"),
+) -> None:
+    """Export proposed sender→tag rules (never installed; v1 is read-only)."""
+    cfg = load_config()
+    store = _open(cfg)
+    from .export import export_rules
+
+    path = export_rules(store, cfg.exports_dir, fmt=format)
+    typer.echo(f"Wrote {path}")
+    store.close()
+
+
+@app.command()
+def audit() -> None:
+    """Pass 5: scan for tag/keyword contradictions → audit report."""
+    cfg = load_config()
+    store = _open(cfg)
+    tax = load_taxonomy(cfg.taxonomy_version)
+    from .audit import run_audit, write_audit_report
+    from .summary import write_summary
+
+    findings = run_audit(store, tax)
+    path = write_audit_report(store, findings, cfg.reports_dir)
+    write_summary(store, tax, cfg.data_dir)
+    typer.echo(f"Audit: {len(findings)} finding(s). Wrote {path}")
     store.close()
 
 
