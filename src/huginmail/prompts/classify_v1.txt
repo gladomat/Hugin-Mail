@@ -6,4 +6,4 @@ confidence rather than guessing.
 
 Respond with a JSON object only, matching:
 {{"tag": "<one taxonomy tag>", "subtags": ["<optional subtag leaf>"],
-  "confidence": <0.0-1.0>, "rationale": "<one sentence>"}}
+  "confidence": <0.0-1.0>, "rationale": "<see instruction below>"}}

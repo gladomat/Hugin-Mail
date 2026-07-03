@@ -27,6 +27,7 @@ Quote paths from here when naming files for a task (PRD §12). Keep modules
 | `export.py` | Manifest → Parquet + CSV twin; proposed rules → text/Sieve |
 | `summary.py` | `SUMMARY.md` standing overview + needs-review + audit count |
 | `audit.py` | Pass 5: tag/keyword contradiction scan → findings + report |
+| `compare.py` | Dry-run model comparison (classify a sample under N models, diff) |
 | `log.py` | Logging configuration (CLI `-v/-q`) |
 | `cli.py` | Typer CLI: `init-config`, `status`, `sync`, `confirm`, `classify`, `audit`, `report`, `export`, `taxonomy` |
 

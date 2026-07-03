@@ -66,7 +66,9 @@ base_url = "http://127.0.0.1:8000/v1"   # oMLX default; Ollama: http://127.0.0.1
 model_id = "mlx-community/Qwen3-4B-Instruct"
 working_budget_tokens = 4096
 confidence_threshold = 0.7              # LLM calls below this land in `unclassified`
-concurrency = 1                         # parallel in-flight requests (raise to ~4-8)
+concurrency = 1                         # parallel in-flight requests (raise to ~4)
+max_tokens = 75                         # output cap; lower = faster (output-bound)
+rationale = "terse"                     # terse (<=6 words) | full | off
 """
 
 
@@ -324,6 +326,53 @@ def audit() -> None:
     path = write_audit_report(store, findings, cfg.reports_dir)
     write_summary(store, tax, cfg.data_dir)
     typer.echo(f"Audit: {len(findings)} finding(s). Wrote {path}")
+    store.close()
+
+
+@app.command()
+def compare(
+    model: str = typer.Option(
+        None, help="Model id to run (default: config llm.model_id = the loaded one)"),
+    sample: int = typer.Option(20, help="Messages to classify (fixed across runs)"),
+    show: bool = typer.Option(False, "--show", help="Just diff existing runs, don't run"),
+    reset: bool = typer.Option(False, "--reset", help="Delete saved runs and exit"),
+) -> None:
+    """Compare models across SEPARATE runs (for hardware that holds one model at a
+    time). Run once per model — reloading the server between — then it diffs.
+    Nothing is persisted to the classification store."""
+    cfg = load_config()
+    from .compare import load_runs, render_diff, reset_runs, run_model, write_diff
+
+    if reset:
+        n = reset_runs(cfg.reports_dir)
+        typer.echo(f"Cleared {n} saved run(s).")
+        return
+
+    store = _open(cfg)
+    tax = load_taxonomy(cfg.taxonomy_version)
+
+    if not show:
+        if store.message_count() == 0:
+            typer.secho("No messages indexed. Run `hugin sync` first.",
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        mid = model or cfg.llm.model_id
+        typer.echo(f"Classifying {sample}-message sample under '{mid}'… "
+                   f"(reload the server with your next model, then run again)")
+        run = run_model(store, tax, cfg.llm, mid, sample, cfg.reports_dir,
+                        concurrency=cfg.llm.concurrency)
+        typer.echo(f"  {run.model_id}: {run.elapsed:.1f}s "
+                   f"({run.elapsed / max(len(run.sample), 1):.2f}s/msg)")
+
+    runs = load_runs(cfg.reports_dir)
+    if len(runs) < 2:
+        typer.echo(f"{len(runs)} run(s) saved. Reload the next model and run "
+                   f"`hugin compare` again to diff.")
+    else:
+        path = write_diff(runs, cfg.reports_dir)
+        from .compare import agreement
+        typer.echo(f"{len(runs)} models · agreement {agreement(runs) * 100:.0f}%. "
+                   f"Wrote {path}")
     store.close()
 
 

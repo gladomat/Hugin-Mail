@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,6 +32,10 @@ class LlmConfig(BaseModel):
     # Parallel in-flight classification requests (1 = sequential). Classification
     # is output-bound; oMLX continuous-batches, so >1 multiplies throughput.
     concurrency: int = 1
+    # Output cap per classification (§9). Lower = faster (output-bound workload).
+    max_tokens: int = 75
+    # Rationale verbosity: 'terse' (≤6 words), 'full' (one sentence), 'off'.
+    rationale: Literal["terse", "full", "off"] = "terse"
 
 
 class Config(BaseModel):

@@ -24,11 +24,24 @@ from .tokens import estimate_tokens
 
 PROMPT_VERSION = "classify_v1"
 
-# Per-request sampling — sent explicitly, never relying on server defaults (§9).
-SAMPLING = {"temperature": 0.0, "top_p": 1.0, "max_tokens": 200}
+# Per-request sampling base — sent explicitly, never relying on server defaults
+# (§9). `max_tokens` is added per call from config (output-bound; see #25).
+BASE_SAMPLING = {"temperature": 0.0, "top_p": 1.0}
+
+# Rationale-mode instruction appended to the system prompt. Recorded in
+# prompt_version so provenance reflects the mode.
+_RATIONALE_INSTRUCTION = {
+    "terse": "Keep 'rationale' to at most 6 words.",
+    "full": "Give a concise one-sentence 'rationale'.",
+    "off": "Set 'rationale' to an empty string.",
+}
 
 # Fixed token allocation (§9.1).
 PAYLOAD_BUDGET = 300
+
+
+def sampling_for(cfg: LlmConfig) -> dict:
+    return {**BASE_SAMPLING, "max_tokens": cfg.max_tokens}
 
 
 class LlmResponse(BaseModel):
@@ -74,29 +87,35 @@ def build_payload(msg: EmailMessage, budget: int = PAYLOAD_BUDGET) -> tuple[str,
 def classify_message(
     client: LlmClient, tax: TagTaxonomy, msg: EmailMessage, cfg: LlmConfig,
 ) -> LlmOutcome:
-    system = load_prompt().format(taxonomy=render_prompt(tax))
+    mode = cfg.rationale
+    system = (load_prompt().format(taxonomy=render_prompt(tax))
+              + "\n" + _RATIONALE_INSTRUCTION[mode])
+    prompt_version = f"{PROMPT_VERSION}+{mode}"
+    sampling = sampling_for(cfg)
     payload, truncated = build_payload(msg)
     hint = keyword_hint(msg, tax)
     if hint:
         payload += f"\nKeyword hint (advisory, may be wrong): {hint}"
     leaves = valid_leaves(tax)
 
-    parsed = _try_classify(client, system, payload)
+    parsed = _try_classify(client, system, payload, sampling)
     if parsed is None:
-        parsed = _try_classify(client, system, payload)  # retry once
+        parsed = _try_classify(client, system, payload, sampling)  # retry once
 
     if parsed is None or parsed.tag not in leaves:
-        return LlmOutcome("unclassified", None, 0.0, "", truncated, cfg.model_id)
+        return LlmOutcome("unclassified", None, 0.0, "", truncated, cfg.model_id,
+                          prompt_version)
 
     subtag = next((s.split("/", 1)[1] for s in parsed.subtags
                    if s in leaves and "/" in s), None)
     return LlmOutcome(parsed.tag, subtag, parsed.confidence, parsed.rationale,
-                      truncated, cfg.model_id)
+                      truncated, cfg.model_id, prompt_version)
 
 
-def _try_classify(client: LlmClient, system: str, payload: str) -> LlmResponse | None:
+def _try_classify(client: LlmClient, system: str, payload: str,
+                  sampling: dict) -> LlmResponse | None:
     try:
-        raw = client.complete(system, payload, SAMPLING)
+        raw = client.complete(system, payload, sampling)
         return LlmResponse.model_validate_json(_extract_json(raw))
     except (ValidationError, json.JSONDecodeError, ValueError):
         return None

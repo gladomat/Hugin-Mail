@@ -1,18 +1,28 @@
 version: v1
 changelog: |
-  v1 - seed taxonomy (PRD v0.2 §7).
+  v1 - seed taxonomy (PRD v0.2 §7). Definitions sharpened to disambiguate
+  boundary cases surfaced by model comparison: correspondence-vs-broadcast
+  (keep), and automated alerts vs subscribed digests (notification/newsletter).
 tags:
   - name: keep
-    definition: Correspondence, personal, work-relevant.
+    definition: >-
+      Personal or work correspondence written directly to you by a human.
+      NOT automated, NOT published/broadcast content, NOT job alerts.
   - name: receipt
     definition: Purchase confirmations, invoices, bank/brokerage statements.
     subtags: [receipt/bank, receipt/purchase, receipt/subscription]
   - name: notification
-    definition: Transactional/automated but non-financial (shipping, CI, calendar).
+    definition: >-
+      Automated transactional message, non-financial. Includes shipping/order
+      status, CI/build, calendar invites, security alerts, and per-listing job
+      alerts (a single automated posting).
   - name: newsletter
-    definition: Subscribed periodic content.
+    definition: >-
+      Subscribed periodic/broadcast content. Includes Substack/blog essays,
+      media briefings, market updates, and recurring job DIGESTS (weekly
+      round-ups of many listings).
   - name: junk
-    definition: Marketing, cold outreach, expired promotions.
+    definition: Unsolicited marketing, cold outreach, promotions, expired offers.
     subtags: [junk/marketing]
   - name: unclassified
     definition: Explicit residual bucket; must trend to zero by end of Pass 4.

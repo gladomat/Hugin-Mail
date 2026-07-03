@@ -4,10 +4,10 @@ from huginmail.classify import classify_llm_batch
 from huginmail.config import LlmConfig
 from huginmail.llm import (
     PROMPT_VERSION,
-    SAMPLING,
     build_payload,
     classify_message,
     load_prompt,
+    sampling_for,
 )
 from huginmail.models import EmailMessage
 from huginmail.sync import sync_folder
@@ -45,7 +45,9 @@ def test_prompt_has_version_and_loads(tax):
 def test_sampling_profile_sent(tax):
     c = FakeClient('{"tag":"keep","confidence":0.9,"rationale":"personal"}')
     classify_message(c, tax, _msg(), CFG)
-    assert c.calls[0]["sampling"] == SAMPLING
+    s = c.calls[0]["sampling"]
+    assert s["temperature"] == 0.0 and s["top_p"] == 1.0
+    assert s["max_tokens"] == CFG.max_tokens  # from config, default 75
 
 
 def test_valid_response_parsed(tax):
@@ -53,7 +55,8 @@ def test_valid_response_parsed(tax):
                    '"confidence":0.8,"rationale":"a statement"}')
     out = classify_message(c, tax, _msg(), CFG)
     assert out.tag == "receipt" and out.subtag == "bank"
-    assert out.model_id == "test-model" and out.prompt_version == PROMPT_VERSION
+    assert out.model_id == "test-model"
+    assert out.prompt_version.startswith(PROMPT_VERSION)  # + rationale mode
 
 
 def test_retry_once_then_succeeds(tax):
